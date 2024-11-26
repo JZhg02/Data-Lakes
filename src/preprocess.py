@@ -40,26 +40,110 @@ def preprocess_data(data_file, output_dir):
     - Assurez que les données très déséquilibrées sont bien réparties dans les ensembles.
     - Générez des fichiers supplémentaires comme un mapping des classes et les poids de classes.
     """
-    # Importez les modules nécessaires : pandas, numpy, LabelEncoder, train_test_split
-    import pandas as pd
-    import numpy as np
-    from sklearn.preprocessing import LabelEncoder
-    from sklearn.model_selection import train_test_split
+    # Load the data
+    print('Loading Data')
+    data = pd.read_csv(data_file)
 
-    # Étape 1 : Chargez les données brutes avec pd.read_csv
+    # Handle missing values
+    data = data.dropna()
 
-    # Étape 2 : Supprimez les valeurs manquantes avec dropna
+    # Encode the family_accession to numeric labels
+    label_encoder = LabelEncoder()
+    data['class_encoded'] = label_encoder.fit_transform(data['family_accession'])
 
-    # Étape 3 : Encodez la colonne 'family_accession' en labels numériques avec LabelEncoder
+    # Save the label encoder
+    joblib.dump(label_encoder, f'{output_dir}/label_encoder.joblib')
 
-    # Étape 4 : Divisez les indices des données en ensembles d'entraînement, validation et test
-    # Utilisez la stratégie donnée dans les étapes
+    # Save the label encoder mapping before removing classes
+    label_mapping = dict(zip(label_encoder.classes_, label_encoder.transform(label_encoder.classes_)))
+    with open(f'{output_dir}/label_mapping.txt', 'w') as f:
+        for key, value in label_mapping.items():
+            f.write(f"{key}: {value}\n")
 
-    # Étape 5 : Créez des DataFrames pour chaque ensemble et sauvegardez-les en fichiers CSV
+    # Convert to numpy arrays for faster processing
+    family_accession = data['family_accession'].values
+    class_encoded = data['class_encoded'].values
 
-    # Étape 6 : Calculez les poids de classes pour équilibrer les données
-    # Sauvegardez les poids de classes dans un fichier texte
-    pass
+    unique_classes, class_counts = np.unique(family_accession, return_counts=True)
+
+    train_indices = []
+    dev_indices = []
+    test_indices = []
+
+    # Distribute classes with specific logic
+    print("Distributing data")
+    for cls in tqdm.tqdm(unique_classes):
+        class_data_indices = np.where(family_accession == cls)[0]
+        count = len(class_data_indices)
+
+        if count == 1:
+            test_indices.extend(class_data_indices)
+        elif count == 2:
+            dev_indices.extend(class_data_indices[:1])
+            test_indices.extend(class_data_indices[1:])
+        elif count == 3:
+            train_indices.extend(class_data_indices[:1])
+            dev_indices.extend(class_data_indices[1:2])
+            test_indices.extend(class_data_indices[2:])
+        else:
+            train_part, remaining = train_test_split(
+                class_data_indices,
+                test_size=2/3,
+                random_state=42,
+                stratify=class_encoded[class_data_indices]
+            )
+            dev_part, test_part = train_test_split(
+                remaining,
+                test_size=0.5,
+                random_state=42,
+                stratify=class_encoded[remaining]
+            )
+            train_indices.extend(train_part)
+            dev_indices.extend(dev_part)
+            test_indices.extend(test_part)
+
+    # Convert indices lists to numpy arrays
+    train_indices = np.array(train_indices)
+    dev_indices = np.array(dev_indices)
+    test_indices = np.array(test_indices)
+
+    # Create DataFrames from the indices
+    train_data = data.iloc[train_indices]
+    dev_data = data.iloc[dev_indices]
+    test_data = data.iloc[test_indices]
+
+    # Drop columns not useful for prediction
+    train_data = train_data.drop(columns=["family_id", "sequence_name", "family_accession"])
+    dev_data = dev_data.drop(columns=["family_id", "sequence_name", "family_accession"])
+    test_data = test_data.drop(columns=["family_id", "sequence_name", "family_accession"])
+
+    # Save the preprocessed data
+    train_data.to_csv(f'{output_dir}/train.csv', index=False)
+    dev_data.to_csv(f'{output_dir}/dev.csv', index=False)
+    test_data.to_csv(f'{output_dir}/test.csv', index=False)
+
+    # Determine class weights
+    class_counts = train_data['class_encoded'].value_counts()
+    class_weights = 1. / class_counts
+    class_weights /= class_weights.sum()
+
+    # Calculate the scaling factor
+    min_weight = class_weights.max()
+    weight_scaling_factor = 1 / min_weight
+
+    # Apply the scaling factor to class weights
+    class_weights *= weight_scaling_factor
+
+    # Create a full range of class weights with missing classes having weight 0
+    max_class = max(class_counts.index)
+    full_class_weights = {i: class_weights.get(i, 0.0) for i in range(max_class + 1)}
+
+    # Save the class weights
+    class_weights_dict = OrderedDict(sorted(full_class_weights.items()))
+    with open(f'{output_dir}/class_weights.txt', 'w') as f:
+        for key, value in class_weights_dict.items():
+            f.write(f"{key}: {value}\n")
+
 
 
 
