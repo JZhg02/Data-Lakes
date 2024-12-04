@@ -3,3 +3,5 @@
 ['remote "localstack-s3"']
     url = s3://raw
     endpointurl = http://localhost:4566
+    access_key_id = root
+    secret_access_key = root

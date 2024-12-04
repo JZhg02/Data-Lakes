@@ -5,22 +5,33 @@ stages:
       - localstack_running.log  # Track the state of the container to ensure this stage runs only when needed
 
   unpack:
-    cmd: # HINT: Specify the command to run unpack_data.py
-    deps:
+    cmd: python src/unpack_to_raw.py --input_dir data/raw --bucket_name raw --output_file_name combined_raw.csv # HINT: Specify the command to run unpack_data.py
+    deps: 
+      - src/unpack_to_raw.py
+      - data/raw
       # HINT: List dependencies here, such as the script file and input data
     outs:
+      - s3://raw/combined_raw.csv 
       # HINT: Define the output location in the raw S3 bucket for combined_raw.csv
 
   preprocess:
-    cmd: # HINT: Specify the command to run preprocess_to_staging.py
+    cmd: python src/preprocess_to_staging.py --bucket_raw raw --bucket_staging staging --input_file combined_raw.csv --output_prefix preprocessed # HINT: Specify the command to run preprocess_to_staging.py
     deps:
+      - src/preprocess_to_staging.py
+      - s3://raw/combined_raw.csv
       # HINT: List dependencies here, such as the script file and the raw S3 bucket file
     outs:
+      - s3://staging/preprocessed_train.csv
+      - s3://staging/preprocessed_dev.csv
+      - s3://staging/preprocessed_test.csv
       # HINT: Define the output locations in the staging S3 bucket for train, dev, and test splits
 
   process:
-    cmd: # HINT: Specify the command to run process_to_curated.py
+    cmd: python src/process_to_curated.py --bucket_staging staging --bucket_curated curated --input_file preprocessed_train.csv --output_file tokenized_train.csv # HINT: Specify the command to run process_to_curated.py
     deps:
+      - src/process_to_curated.py
+      - s3://staging/preprocessed_train.csv
       # HINT: List dependencies here, such as the script file and the staging S3 bucket files
     outs:
+      - s3://staging/tokenized_train.csv
       # HINT: Define the output location in the curated S3 bucket for tokenized_train.csv
