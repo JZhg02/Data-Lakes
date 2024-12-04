@@ -1,48 +1,123 @@
 # Data Lakes & Data Integration 
 
-## 1. Build the Repo
+This repository is designed to help students learn about data lakes and data integration pipelines using Python, Docker, LocalStack, and DVC. Follow the steps below to set up and run the pipeline.
 
-### Install the Requirements
-Install the necessary packages using the requirements file found in the `build` folder:
+---
+
+## 1. Prerequisites
+
+### Install Docker
+Docker is required to run LocalStack, a tool simulating AWS services locally.
+
+1. Install Docker:
+```bash
+sudo apt update
+sudo apt install docker.io
+```
+
+2. Verify Docker installation:
+```bash
+docker --version
+```
+
+3. Install AWS CLI
+AWS CLI is used to interact with LocalStack S3 buckets.
+
+```bash
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+```
+
+4. Verify that the installation worked
+
+```bash
+aws --version
+```
+
+5. Configure AWS CLI for LocalStack
+
+```bash
+aws configure
+```
+
+Enter the following values:
+* AWS Access Key ID: root
+* AWS Secret Access Key: root
+* Default region name: us-east-1
+* Default output format: json
+
+6. Create LocalStack S3 buckets:
+
+```bash
+Copier le code
+aws --endpoint-url=http://localhost:4566 s3 mb s3://raw
+aws --endpoint-url=http://localhost:4566 s3 mb s3://staging
+aws --endpoint-url=http://localhost:4566 s3 mb s3://curated
+```
+
+7. Install DVC
+DVC is used for data version control and pipeline orchestration.
+
+```bash
+pip install dvc
+```
+
+```bash
+dvc remote add -d localstack-s3 s3://
+dvc remote modify localstack-s3 endpointurl http://localhost:4566
+```
+
+## 2. Repository Setup
+Install Python Dependencies
+
 ```bash
 pip install -r build/requirements.txt
 ```
 
-### Download the Data
+Start LocalStack
 
-Download the dataset from the following [link](https://www.kaggle.com/api/v1/datasets/download/googleai/pfam-seed-random-split).
-
-***Note**: It is possible to download the dataset using the Kaggle API, but this requires you to be logged in, which may make the process longer. To use the Kaggle API, follow these steps:*
-
-#### A - Ensure you have the Kaggle CLI installed:
 ```bash
-pip install kaggle
+bash scripts/start_localstack.sh
 ```
 
-#### B - Authenticate with Kaggle by placing your kaggle.json file (containing your API credentials) in the ~/.kaggle/ directory.
+Download the Dataset
 
-
-#### C - Use the following command to download the dataset:
 ```bash
+pip install kaggle 
 kaggle datasets download googleai/pfam-seed-random-split
 ```
 
-### Organize the Data
-Move the contents of the dataset (train, dev, test, random_split) to a data/bronze/ folder.
+Move the dataset into a data/raw folder.
 
-### Unpack the Data
-Unpack the data using the unpack_data.py script found in the build folder.
-```bash
-python build/unpack_data.py --input_dir data/bronze/ --output_file data/bronze/combined_data.csv
-```
+## 3. Running the Pipeline
 
-## 2. Data Analysis
-A quick data analysis is at your disposal to help you understand the data in the *data_analysis.ipynb* notebook. Your goal should be to understand the data, and why the transformations suggested in src/preprocess.py need to be made.
-
-## 3. Data Pre-processing
-Data needs to be preprocessed to be stage from a bronze to a silver layer. Your preprocessing script should drop rows with missing values if they exist, encode labels, split data across train/dev/test sets, drop columns and save class weights for training.
+Unpack the dataset into a single CSV file in the raw bucket:
 
 ```bash
-python src/preprocess.py --data_file data/bronze/combined_data.csv --output_dir data/silver/
+python build/unpack_data.py --input_dir data/raw --bucket_name raw --output_file_name combined_raw.csv
 ```
 
+Preprocess the data to clean, encode, split into train/dev/test, and compute class weights:
+
+```bash
+python src/preprocess_to_staging.py --bucket_raw raw --input_file combined_raw.parquet 
+```
+
+Prepare the data for model training by tokenizing sequences:
+
+```bash
+python src/process_to_curated.py --uri http://localhost:27017
+```
+
+## 4. Running the Entire Pipeline with DVC
+The pipeline stages are defined in dvc.yaml. Run the pipeline using:
+
+```bash
+dvc repro
+```
+
+## 5. Notes
+Ensure LocalStack is running before executing any pipeline stage.
+This pipeline illustrates a basic ETL flow for a data lake, preparing data from raw to curated for AI model training.
+If you encounter any issues, ensure Docker, AWS CLI, and DVC are correctly configured.
